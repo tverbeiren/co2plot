@@ -1,0 +1,434 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [ -z "$VIASH_TEMP" ]; then
+  VIASH_TEMP=/tmp
+fi
+
+# define helper functions
+# ViashQuote: put quotes around non flag values
+# $1     : unquoted string
+# return : possibly quoted string
+# examples:
+#   ViashQuote --foo      # returns --foo
+#   ViashQuote bar        # returns 'bar'
+#   Viashquote --foo=bar  # returns --foo='bar'
+function ViashQuote {
+  if [[ "$1" =~ ^-+[a-zA-Z0-9_\-]+=.+$ ]]; then
+    echo "$1" | sed "s#=\(.*\)#='\1'#"
+  elif [[ "$1" =~ ^-+[a-zA-Z0-9_\-]+$ ]]; then
+    echo "$1"
+  else
+    echo "'$1'"
+  fi
+}
+# ViashRemoveFlags: Remove leading flag
+# $1     : string with a possible leading flag
+# return : string without possible leading flag
+# examples:
+#   ViashRemoveFlags --foo=bar  # returns bar
+function ViashRemoveFlags {
+  echo "$1" | sed 's/^--*[a-zA-Z0-9_\-]*=//'
+}
+# ViashSourceDir: return the path of a bash file, following symlinks
+# usage   : ViashSourceDir ${BASH_SOURCE[0]}
+# $1      : Should always be set to ${BASH_SOURCE[0]}
+# returns : The absolute path of the bash file
+function ViashSourceDir {
+  SOURCE="$1"
+  while [ -h "$SOURCE" ]; do
+    DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+  done
+  cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd
+}
+
+# find source folder of this component
+VIASH_RESOURCES_DIR=`ViashSourceDir ${BASH_SOURCE[0]}`
+
+# ViashDockerFile: print the dockerfile to stdout
+# return : dockerfile required to run this component
+# examples:
+#   ViashDockerFile
+function ViashDockerfile {
+cat << 'VIASHDOCKER'
+FROM rocker/tidyverse
+
+RUN Rscript -e 'if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")' && \
+  Rscript -e 'remotes::install_cran(c("lubridate", "patchwork"), repos = "https://cran.rstudio.com")'
+
+VIASHDOCKER
+}
+
+# ViashSetup: build a docker container
+# if available on docker hub, the image will be pulled
+# from there instead.
+# examples:
+#   ViashSetup
+function ViashSetup {
+  # create temporary directory to store temporary dockerfile in
+
+  tmpdir=$(mktemp -d "$VIASH_TEMP/viash_setupdocker-co2plot-XXXXXX")
+  function clean_up {
+    rm -rf "\$tmpdir"
+  }
+  trap clean_up EXIT
+  ViashDockerfile > $tmpdir/Dockerfile
+  # if [ ! -z $(docker images -q co2plot:1.0) ]; then
+  #   echo "Image exists locally or on Docker Hub"
+  # else
+    # Quick workaround to have the resources available in the current dir
+    cp $VIASH_RESOURCES_DIR/* $tmpdir
+    # Build the container
+    echo "> docker build -t co2plot:1.0 $tmpdir"
+    docker build -t co2plot:1.0 $tmpdir
+  #fi
+}
+
+
+# ViashHelp: Display helpful explanation about this executable
+function ViashHelp {
+   echo "Tool for plotting one day of measurements with an Aranet4 device (or compatible)."
+   echo
+   echo "Options:"
+    echo "    -f string, --format=string"
+    echo "        type: string, default: pdf"
+    echo "        Output format"
+    echo ""
+    echo "    -w string, --who=string"
+    echo "        type: string, required parameter"
+    echo "        elias or sarah"
+    echo ""
+    echo "    -d string, --day=string"
+    echo "        type: string, required parameter"
+    echo "        Date of interest in format dmy"
+    echo ""
+    echo "    -i file, --input=file"
+    echo "        type: file, default: ${VIASH_PAR_WHO}"
+    echo "        Input directory containing csv file(s) with measurements"
+    echo ""
+    echo "    -o file, --output=file"
+    echo "        type: file, default: ."
+    echo "        Output directory"
+    echo ""
+}
+# ViashAbsolutePath: generate absolute path from relative path
+# borrowed from https://stackoverflow.com/a/21951256
+# $1     : relative filename
+# return : absolute path
+# examples:
+#   ViashAbsolutePath some_file.txt   # returns /path/to/some_file.txt
+#   ViashAbsolutePath /foo/bar/..     # returns /foo
+function ViashAbsolutePath {
+  local thePath
+  if [[ ! "$1" =~ ^/ ]]; then
+    thePath="$PWD/$1"
+  else
+    thePath="$1"
+  fi
+  echo "$thePath" | (
+    IFS=/
+    read -a parr
+    declare -a outp
+    for i in "${parr[@]}"; do
+      case "$i" in
+      ''|.) continue ;;
+      ..)
+        len=${#outp[@]}
+        if ((len==0)); then
+          continue
+        else
+          unset outp[$((len-1))]
+        fi
+        ;;
+      *)
+        len=${#outp[@]}
+        outp[$len]="$i"
+      ;;
+      esac
+    done
+    echo /"${outp[*]}"
+  )
+}
+# ViashAutodetectMount: auto configuring docker mounts from parameters
+# $1                  : The parameter value
+# returns             : New parameter
+# $VIASH_EXTRA_MOUNTS : Added another parameter to be passed to docker
+# examples:
+#   ViashAutodetectMount /path/to/bar      # returns '/viash_automount/path/to/bar'
+#   ViashAutodetectMountArg /path/to/bar   # returns '-v /path/to:/viash_automount/path/to'
+function ViashAutodetectMount {
+  abs_path=$(ViashAbsolutePath "$1")
+  if [ -d "$abs_path" ]; then
+    mount_source="$abs_path"
+    base_name=""
+  else
+    mount_source=`dirname "$abs_path"`
+    base_name=`basename "$abs_path"`
+  fi
+  mount_target="/viash_automount$mount_source"
+  echo "$mount_target/$base_name"
+}
+function ViashAutodetectMountArg {
+  abs_path=$(ViashAbsolutePath "$1")
+  if [ -d "$abs_path" ]; then
+    mount_source="$abs_path"
+    base_name=""
+  else
+    mount_source=`dirname "$abs_path"`
+    base_name=`basename "$abs_path"`
+  fi
+  mount_target="/viash_automount$mount_source"
+  echo "-v \"$mount_source:$mount_target\""
+}
+# ViashExtractFlags: Retain leading flag
+# $1     : string with a possible leading flag
+# return : leading flag
+# examples:
+#   ViashExtractFlags --foo=bar  # returns --foo
+function ViashExtractFlags {
+  echo $1 | sed 's/=.*//'
+}
+# initialise autodetect mount variable
+VIASH_EXTRA_MOUNTS=''
+
+# initialise array
+VIASH_POSITIONAL_ARGS=''
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            ViashHelp
+            exit;;
+        ---setup)
+            ViashSetup
+            exit 0
+            ;;
+        --format)
+            VIASH_PAR_FORMAT="$2"
+            shift 2
+            ;;
+        --format=*)
+            VIASH_PAR_FORMAT=$(ViashRemoveFlags "$1")
+            shift 1
+            ;;
+        -f)
+            VIASH_PAR_FORMAT="$2"
+            shift 2
+            ;;
+        --who)
+            VIASH_PAR_WHO="$2"
+            shift 2
+            ;;
+        --who=*)
+            VIASH_PAR_WHO=$(ViashRemoveFlags "$1")
+            shift 1
+            ;;
+        -w)
+            VIASH_PAR_WHO="$2"
+            shift 2
+            ;;
+        --day)
+            VIASH_PAR_DAY="$2"
+            shift 2
+            ;;
+        --day=*)
+            VIASH_PAR_DAY=$(ViashRemoveFlags "$1")
+            shift 1
+            ;;
+        -d)
+            VIASH_PAR_DAY="$2"
+            shift 2
+            ;;
+        --input)
+            VIASH_PAR_INPUT="$2"
+            shift 2
+            ;;
+        --input=*)
+            VIASH_PAR_INPUT=$(ViashRemoveFlags "$1")
+            shift 1
+            ;;
+        -i)
+            VIASH_PAR_INPUT="$2"
+            shift 2
+            ;;
+        --output)
+            VIASH_PAR_OUTPUT="$2"
+            shift 2
+            ;;
+        --output=*)
+            VIASH_PAR_OUTPUT=$(ViashRemoveFlags "$1")
+            shift 1
+            ;;
+        -o)
+            VIASH_PAR_OUTPUT="$2"
+            shift 2
+            ;;
+        ---v|---volume)
+            VIASH_EXTRA_MOUNTS="$VIASH_EXTRA_MOUNTS -v "$2""
+            shift 2
+            ;;
+        ---volume=*)
+            VIASH_EXTRA_MOUNTS="$VIASH_EXTRA_MOUNTS -v $(ViashRemoveFlags "$2")"
+            shift 1
+            ;;
+         ---debug)
+            VIASH_DEBUG=yes
+            shift 1
+            ;;
+        ---dockerfile)
+            ViashDockerfile
+            exit 0
+            ;;
+        *)    # positional arg or unknown option
+            # since the positional args will be eval'd, can we always quote, instead of using ViashQuote
+            VIASH_POSITIONAL_ARGS="$VIASH_POSITIONAL_ARGS '$1'"
+            shift # past argument
+            ;;
+    esac
+done
+
+# parse positional parameters
+eval set -- $VIASH_POSITIONAL_ARGS
+
+
+
+# check whether required parameters exist
+if [ -z "$VIASH_PAR_WHO" ]; then
+  echo '--who' is a required argument. Use "--help" to get more information on the parameters.
+  exit 1
+fi
+if [ -z "$VIASH_PAR_DAY" ]; then
+  echo '--day' is a required argument. Use "--help" to get more information on the parameters.
+  exit 1
+fi
+if [ -z "$VIASH_PAR_FORMAT" ]; then
+  VIASH_PAR_FORMAT="pdf"
+fi
+if [ -z "$VIASH_PAR_INPUT" ]; then
+  VIASH_PAR_INPUT="${VIASH_PAR_WHO}"
+fi
+if [ -z "$VIASH_PAR_OUTPUT" ]; then
+  VIASH_PAR_OUTPUT="."
+fi
+
+
+# detect volumes from file arguments
+if [ ! -z "$VIASH_PAR_INPUT" ]; then
+  VIASH_EXTRA_MOUNTS="$VIASH_EXTRA_MOUNTS $(ViashAutodetectMountArg "$VIASH_PAR_INPUT")"
+  VIASH_PAR_INPUT=$(ViashAutodetectMount "$VIASH_PAR_INPUT")
+fi
+if [ ! -z "$VIASH_PAR_OUTPUT" ]; then
+  VIASH_EXTRA_MOUNTS="$VIASH_EXTRA_MOUNTS $(ViashAutodetectMountArg "$VIASH_PAR_OUTPUT")"
+  VIASH_PAR_OUTPUT=$(ViashAutodetectMount "$VIASH_PAR_OUTPUT")
+fi
+
+# Always mount the resource directory
+VIASH_EXTRA_MOUNTS="$VIASH_EXTRA_MOUNTS $(ViashAutodetectMountArg "$VIASH_RESOURCES_DIR")"
+VIASH_RESOURCES_DIR=$(ViashAutodetectMount "$VIASH_RESOURCES_DIR")
+
+# Always mount the VIASH_TEMP directory
+VIASH_EXTRA_MOUNTS="$VIASH_EXTRA_MOUNTS $(ViashAutodetectMountArg "$VIASH_TEMP")"
+VIASH_TEMP=$(ViashAutodetectMount "$VIASH_TEMP")
+
+# if desired, enter a debug session
+if [ ${VIASH_DEBUG} ]; then
+  echo "+ docker run --entrypoint=bash -i --rm -v "$(pwd)":/pwd --workdir /pwd -t co2plot:1.0"
+  docker run --entrypoint=bash -i --rm -v "$(pwd)":/pwd --workdir /pwd -t co2plot:1.0
+  exit 0
+fi
+
+# change file ownership
+function viash_perform_chown {
+  
+  if [ ! -z "$VIASH_PAR_OUTPUT" ]; then
+    eval docker run --entrypoint=chown -i --rm $VIASH_EXTRA_MOUNTS co2plot:1.0 "$(id -u):$(id -g)" -R "$VIASH_PAR_OUTPUT"
+  fi
+}
+trap viash_perform_chown EXIT
+
+
+cat << VIASHEOF | eval docker run --entrypoint=bash -i --rm $VIASH_EXTRA_MOUNTS co2plot:1.0 
+set -e
+tempscript=\$(mktemp "$VIASH_TEMP/viash-run-co2plot-XXXXXX")
+function clean_up {
+  rm "\$tempscript"
+}
+trap clean_up EXIT
+cat > "\$tempscript" << 'VIASHMAIN'
+# The following code has been auto-generated by Viash.
+par <- list(
+  "format" = $( if [ ! -z ${VIASH_PAR_FORMAT+x} ]; then echo "'$VIASH_PAR_FORMAT'"; else echo NULL; fi ),
+  "who" = $( if [ ! -z ${VIASH_PAR_WHO+x} ]; then echo "'$VIASH_PAR_WHO'"; else echo NULL; fi ),
+  "day" = $( if [ ! -z ${VIASH_PAR_DAY+x} ]; then echo "'$VIASH_PAR_DAY'"; else echo NULL; fi ),
+  "input" = $( if [ ! -z ${VIASH_PAR_INPUT+x} ]; then echo "'$VIASH_PAR_INPUT'"; else echo NULL; fi ),
+  "output" = $( if [ ! -z ${VIASH_PAR_OUTPUT+x} ]; then echo "'$VIASH_PAR_OUTPUT'"; else echo NULL; fi )
+)
+
+resources_dir = "$VIASH_RESOURCES_DIR"
+
+suppressPackageStartupMessages({
+  library("readr")
+  library("tidyr")
+  library("dplyr")
+  library("ggplot2")
+  library("lubridate")
+  library("tidyverse")
+
+  library("devtools")
+  library("patchwork")
+})
+
+input_file <- par\$input
+day_str <- par\$day
+who <- par\$who
+
+day <- dmy(day_str)
+wday <- wday(day)
+
+start_am <- day + hms("00:00:01")
+end_pm <- day + hms("23:59:99")
+
+suppressMessages(
+  data <-
+    list.files(path = par\$input, pattern = "*.csv", full.names = T) %>% 
+    map_df(~read_csv(.))
+)
+
+colnames(data) <- c("time", "co2", "temperature", "humidity", "pressure")
+
+data1 <- data %>%
+  mutate(time = mdy_hms(time)) %>%
+  distinct()
+
+selection <- data1 %>%
+  filter(between(time, start_am, end_pm))
+
+co2_plot <- selection %>% ggplot(aes(x = time)) + geom_line(aes(y=co2)) +
+  scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
+  geom_hline(yintercept = 900, color = "orange", size=1.5, linetype="dotted") +
+  geom_hline(yintercept = 1200, color = "red", size=1.5, linetype="dotted") +
+  labs(y="CO2 (ppm)")
+
+co2_plot <- co2_plot
+
+temp_plot <- selection %>% ggplot(aes(x = time)) + geom_line(aes(y=temperature)) +
+  scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
+  labs(y="Temperature (°C)")
+
+suppressMessages(
+  co2_plot <- co2_plot +
+    ggtitle(paste(toupper(substring(who,1,1)), "-", stamp_date("Tue Jan 1, 1999")(day))) +
+    theme(plot.title = element_text(hjust = 0.5))
+)
+joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights=c(4,1))
+
+ggsave(paste(par\$output, who, "-", day, ".", par\$format, sep=""), joined, height = 6, width = 8)
+VIASHMAIN
+PATH="$VIASH_RESOURCES_DIR:$PATH"
+
+Rscript "\$tempscript"
+
+VIASHEOF
