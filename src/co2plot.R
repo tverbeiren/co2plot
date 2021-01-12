@@ -5,26 +5,17 @@ suppressPackageStartupMessages({
   library("patchwork")
 })
 
-input_file <- par$input
-day_str <- par$day
+day <- dmy(par$day)
 who <- par$who
-
-day <- dmy(day_str)
-wday <- wday(day)
-
-start_am <- day + hms("00:00:01")
-end_pm <- day + hms("23:59:99")
 
 data <-
   list.files(path = par$input, pattern = "*.csv", full.names = TRUE) %>%
   map_df(read_csv, skip = 1, col_types = cols(time = "c", .default = "d"), col_names = c("time", "co2", "temperature", "humidity", "pressure"))
 
-data1 <- data %>%
+selection <- data %>%
   mutate(time = mdy_hms(time)) %>%
-  distinct()
-
-selection <- data1 %>%
-  filter(between(time, start_am, end_pm))
+  distinct() %>%
+  filter(between(time, day + hms("00:00:01"), day + hms("23:59:99")))
 
 co2_plot <-
   ggplot(selection, aes(x = time)) +
