@@ -32,17 +32,15 @@ co2_plot <-
   scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
   geom_hline(yintercept = 900, color = "orange", size = 1.5, linetype = "dotted") +
   geom_hline(yintercept = 1200, color = "red", size = 1.5, linetype = "dotted") +
-  labs(y = "CO2 (ppm)")
+  labs(y = "CO2 (ppm)") +
+  ggtitle(paste0(toupper(substring(who, 1, 1)), " - ", format(day, "%a %b %d, %Y"))) +
+  theme(plot.title = element_text(hjust = 0.5))
 
 temp_plot <-
   ggplot(selection, aes(x = time)) +
   geom_line(aes(y = temperature)) +
   scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
   labs(y = "Temperature (°C)")
-
-co2_plot <- co2_plot +
-  ggtitle(paste0(toupper(substring(who, 1, 1)), " - ", format(day, "%a %b %d, %Y"))) +
-  theme(plot.title = element_text(hjust = 0.5))
 
 joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights = c(4, 1))
 
