@@ -15,13 +15,9 @@ wday <- wday(day)
 start_am <- day + hms("00:00:01")
 end_pm <- day + hms("23:59:99")
 
-suppressMessages(
-  data <-
-    list.files(path = par$input, pattern = "*.csv", full.names = T) %>% 
-    map_df(~read_csv(.))
-)
-
-colnames(data) <- c("time", "co2", "temperature", "humidity", "pressure")
+data <-
+  list.files(path = par$input, pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~read_csv(., skip = 1, col_types = cols(time = "c", .default = "d"), col_names = c("time", "co2", "temperature", "humidity", "pressure")))
 
 data1 <- data %>%
   mutate(time = mdy_hms(time)) %>%
