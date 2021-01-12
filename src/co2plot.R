@@ -35,7 +35,13 @@ co2_plot <-
   labs(y = "CO2 (ppm)") +
   ggtitle(paste0(toupper(substring(who, 1, 1)), " - ", format(day, "%a %b %d, %Y"))) +
   theme_bw() +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.line.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank()
+  )
 
 temp_plot <-
   ggplot(selection, aes(x = time)) +
