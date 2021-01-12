@@ -52,5 +52,5 @@ temp_plot <-
 
 joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights = c(4, 1))
 
-ggsave(paste(par$output, who, "-", day, ".", par$format, sep=""), joined, height = 6, width = 8)
+ggsave(paste0(par$output, who, "-", day, ".", par$format), joined, height = 6, width = 8)
 
