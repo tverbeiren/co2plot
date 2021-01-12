@@ -1,58 +1,45 @@
-suppressPackageStartupMessages({
-  library("readr")
-  library("tidyr")
-  library("dplyr")
-  library("ggplot2")
-  library("lubridate")
-  library("tidyverse")
+options(tidyverse.quiet = TRUE)
+library(tidyverse)
+library(lubridate, warn.conflicts = FALSE)
+library(patchwork, warn.conflicts = FALSE)
 
-  library("devtools")
-  library("patchwork")
-})
-
-input_file <- par$input
-day_str <- par$day
+day <- dmy(par$day)
 who <- par$who
 
-day <- dmy(day_str)
-wday <- wday(day)
+data <-
+  list.files(path = par$input, pattern = "*.csv", full.names = TRUE) %>%
+  map_df(read_csv, skip = 1, col_types = cols(time = "c", .default = "d"), col_names = c("time", "co2", "temperature", "humidity", "pressure"))
 
-start_am <- day + hms("00:00:01")
-end_pm <- day + hms("23:59:99")
-
-suppressMessages(
-  data <-
-    list.files(path = par$input, pattern = "*.csv", full.names = T) %>% 
-    map_df(~read_csv(.))
-)
-
-colnames(data) <- c("time", "co2", "temperature", "humidity", "pressure")
-
-data1 <- data %>%
+selection <- data %>%
   mutate(time = mdy_hms(time)) %>%
-  distinct()
+  distinct() %>%
+  filter(between(time, day + hms("00:00:01"), day + hms("23:59:99")))
 
-selection <- data1 %>%
-  filter(between(time, start_am, end_pm))
-
-co2_plot <- selection %>% ggplot(aes(x = time)) + geom_line(aes(y=co2)) +
+co2_plot <-
+  ggplot(selection, aes(x = time)) +
+  geom_line(aes(y = co2)) +
   scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
-  geom_hline(yintercept = 900, color = "orange", size=1.5, linetype="dotted") +
-  geom_hline(yintercept = 1200, color = "red", size=1.5, linetype="dotted") +
-  labs(y="CO2 (ppm)")
+  geom_hline(yintercept = 900, color = "orange", size = 1.5, linetype = "dotted") +
+  geom_hline(yintercept = 1200, color = "red", size = 1.5, linetype = "dotted") +
+  labs(y = "CO2 (ppm)") +
+  ggtitle(paste0(toupper(substring(who, 1, 1)), " - ", format(day, "%a %b %d, %Y"))) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.line.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank()
+  )
 
-co2_plot <- co2_plot
-
-temp_plot <- selection %>% ggplot(aes(x = time)) + geom_line(aes(y=temperature)) +
+temp_plot <-
+  ggplot(selection, aes(x = time)) +
+  geom_line(aes(y = temperature)) +
   scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
-  labs(y="Temperature (°C)")
+  labs(y = "Temperature (°C)") +
+  theme_bw()
 
-suppressMessages(
-  co2_plot <- co2_plot +
-    ggtitle(paste(toupper(substring(who,1,1)), "-", stamp_date("Tue Jan 1, 1999")(day))) +
-    theme(plot.title = element_text(hjust = 0.5))
-)
-joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights=c(4,1))
-
-ggsave(paste(par$output, who, "-", day, ".", par$format, sep=""), joined, height = 6, width = 8)
+joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights = c(4, 1))
+output_file <- paste0(par$output, who, "-", day, ".", par$format)
+ggsave(output_file, joined, height = 6, width = 8)
 
