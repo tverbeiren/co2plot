@@ -1,9 +1,7 @@
-suppressPackageStartupMessages({
-  library("lubridate")
-  library("tidyverse")
-
-  library("patchwork")
-})
+options(tidyverse.quiet = TRUE)
+library(tidyverse)
+library(lubridate, warn.conflicts = FALSE)
+library(patchwork, warn.conflicts = FALSE)
 
 day <- dmy(par$day)
 who <- par$who
