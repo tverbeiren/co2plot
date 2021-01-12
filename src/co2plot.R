@@ -2,7 +2,6 @@ suppressPackageStartupMessages({
   library("lubridate")
   library("tidyverse")
 
-  library("devtools")
   library("patchwork")
 })
 
