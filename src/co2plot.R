@@ -34,8 +34,6 @@ co2_plot <-
   geom_hline(yintercept = 1200, color = "red", size = 1.5, linetype = "dotted") +
   labs(y = "CO2 (ppm)")
 
-co2_plot <- co2_plot
-
 temp_plot <-
   ggplot(selection, aes(x = time)) +
   geom_line(aes(y = temperature)) +
