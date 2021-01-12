@@ -40,11 +40,10 @@ temp_plot <-
   scale_x_datetime(breaks = "2 hour", date_labels = "%R") +
   labs(y = "Temperature (°C)")
 
-suppressMessages(
-  co2_plot <- co2_plot +
-    ggtitle(paste(toupper(substring(who, 1, 1)), "-", stamp_date("Tue Jan 1, 1999")(day))) +
-    theme(plot.title = element_text(hjust = 0.5))
-)
+co2_plot <- co2_plot +
+  ggtitle(paste0(toupper(substring(who, 1, 1)), " - ", format(day, "%a %b %d, %Y"))) +
+  theme(plot.title = element_text(hjust = 0.5))
+
 joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights = c(4, 1))
 
 ggsave(paste(par$output, who, "-", day, ".", par$format, sep=""), joined, height = 6, width = 8)
