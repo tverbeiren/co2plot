@@ -17,7 +17,7 @@ end_pm <- day + hms("23:59:99")
 
 data <-
   list.files(path = par$input, pattern = "*.csv", full.names = TRUE) %>%
-  map_df(~read_csv(., skip = 1, col_types = cols(time = "c", .default = "d"), col_names = c("time", "co2", "temperature", "humidity", "pressure")))
+  map_df(read_csv, skip = 1, col_types = cols(time = "c", .default = "d"), col_names = c("time", "co2", "temperature", "humidity", "pressure"))
 
 data1 <- data %>%
   mutate(time = mdy_hms(time)) %>%
