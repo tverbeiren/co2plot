@@ -40,6 +40,6 @@ temp_plot <-
   theme_bw()
 
 joined <- wrap_plots(co2_plot, temp_plot, ncol = 1, heights = c(4, 1))
-
-ggsave(paste0(par$output, who, "-", day, ".", par$format), joined, height = 6, width = 8)
+output_file <- paste0(par$output, who, "-", day, ".", par$format)
+ggsave(output_file, joined, height = 6, width = 8)
 
