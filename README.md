@@ -4,7 +4,7 @@ This little tool creates a plot of the readouts of an [Aranet4](https://aranet4.
 
 ## Background
 
-The source for generating the plot is available under `src/`. At Data Intuitive, are developing a tool called `viash` to convert this R code into a runnable script. Viash itself is not yet Open Source (but will soon be).
+The source for generating the plot is available under `src/`. At Data Intuitive, we developed [Viash](http://viash.io/) which is a tool to convert a basic R code file into a runnable script. Viash itself is open source, so please check it out if you're interested.
 
 The resulting script can be found under `bin/`.
 

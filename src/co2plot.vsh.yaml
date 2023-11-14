@@ -1,0 +1,50 @@
+functionality:
+  name: co2plot
+  version: "2.0"
+  description: |
+    Tool for plotting one day of measurements with an Aranet4 device (or compatible).
+  resources:
+    - type: r_script
+      path: co2plot.R
+  arguments:
+  - name: "--format"
+    alternatives: ["-f"]
+    type: string
+    description: Output format
+    default: pdf
+  - name: "--who"
+    alternatives: ["-w"]
+    type: string
+    description: elias or sarah
+    required: true
+  - name: "--day"
+    alternatives: ["-d"]
+    type: string
+    description: Date of interest in format dmy
+    required: true
+  - name: "--input"
+    alternatives: ["-i"]
+    type: file
+    description: Input directory containing csv file(s) with measurements
+    default: ${VIASH_PAR_WHO}/
+  - name: "--add_temperature"
+    type: boolean_true
+    description: Add the temperature to the graph
+  - name: "--add_humidity"
+    type: boolean_true
+    description: Add the humidity to the graph
+  - name: "--output"
+    alternatives: ["-o"]
+    type: file
+    description: Output directory
+    direction: output
+    default: ./
+platforms:
+- type: docker
+  image: rocker/tidyverse
+  setup:
+    - type: r
+      cran:
+      - lubridate
+      - patchwork
+- type: native
